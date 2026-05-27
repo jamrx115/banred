@@ -1,15 +1,47 @@
 # Demo Transacciones - Sesión Única
 
-Incluye registro, login, saldo inicial, transferencias, WebSockets, dashboard, auditoría por IP y bloqueo de doble login.
+Aplicación demostrativa de transferencias entre usuarios con autenticación JWT, control de sesión única, WebSockets, auditoría por IP, dashboard financiero y despliegue contenerizado con Docker Compose.
 
-## Despliegue
+---
 
-```bash
-docker compose down -v
-docker compose up --build -d
-```
+## 1. Objetivo de la aplicación
 
-Frontend: http://194.163.185.53/
-Swagger: http://194.163.185.53:8000/docs
+Esta aplicación permite simular un sistema básico de transacciones entre usuarios, incluyendo:
 
-Ajusta tu IP en `docker-compose.yml` en `VITE_API_URL` y `VITE_WS_URL`.
+- Registro de usuarios.
+- Inicio de sesión con JWT.
+- Bloqueo de doble sesión por usuario.
+- Consulta de saldo.
+- Envío de dinero entre usuarios.
+- Confirmación de transferencias.
+- Dashboard de transacciones.
+- Actualización en tiempo real mediante WebSockets.
+- Auditoría de operaciones con IP origen.
+
+---
+
+## 2. Arquitectura general
+
+```text
+Usuario / Navegador
+        |
+        | HTTPS
+        v
+Cloudflare
+        |
+        | HTTPS
+        v
+Nginx Reverse Proxy
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+Frontend React/Vite              API Backend FastAPI
+Puerto 5173                      Puerto 8000
+        |                             |
+        |                             v
+        |                         Base de datos
+        |                         PostgreSQL
+        |
+        v
+WebSocket wss://api.htqasas.com/ws
