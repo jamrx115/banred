@@ -4,8 +4,9 @@ import { BarChart, Bar, CartesianGrid, Tooltip, XAxis, YAxis, ResponsiveContaine
 import { LogOut, Send, ShieldCheck, Users, Wallet, Wifi, WifiOff } from 'lucide-react';
 import './style.css';
 
-const API = import.meta.env.VITE_API_URL || window.location.origin.replace(':5173', ':8000');
-const WS = import.meta.env.VITE_WS_URL || API.replace(/^http/, 'ws') + '/ws';
+const runtimeConfig = window.__APP_CONFIG__ || {};
+const API = runtimeConfig.API_URL || import.meta.env.VITE_API_URL || window.location.origin.replace(':5173', ':8000');
+const WS = runtimeConfig.WS_URL || import.meta.env.VITE_WS_URL || API.replace(/^http/, 'ws') + '/ws';
 
 function money(value) { return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0)); }
 function initials(user) { return `${user?.first_name?.[0] || user?.username?.[0] || '?'}${user?.last_name?.[0] || ''}`.toUpperCase(); }

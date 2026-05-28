@@ -1,0 +1,391 @@
+terraform {
+  required_version = ">= 1.3.0"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 4.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
+  }
+}
+
+provider "google" {
+  project = var.project_id
+  region  = var.region
+  zone    = var.zone
+}
+
+provider "random" {}
+
+locals {
+  prefix           = lower(replace(var.name_prefix, "/[^a-z0-9-]/", "-"))
+  artifact_repo    = "${var.region}-docker.pkg.dev/${var.project_id}/${local.prefix}-repo"
+  computed_backend = var.backend_image != "" ? var.backend_image : "${local.artifact_repo}/backend:latest"
+  computed_frontend = var.frontend_image != "" ? var.frontend_image : "${local.artifact_repo}/frontend:latest"
+}
+
+resource "google_project_service" "enabled_apis" {
+  for_each = toset([
+    "run.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "sqladmin.googleapis.com",
+    "secretmanager.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "iam.googleapis.com",
+    "compute.googleapis.com",
+  ])
+
+  project = var.project_id
+  service = each.key
+
+  disable_on_destroy = false
+}
+
+resource "google_artifact_registry_repository" "images" {
+  project       = var.project_id
+  location      = var.region
+  repository_id = "${local.prefix}-repo"
+  format        = "DOCKER"
+  description   = "Repositorio de contenedores para QA"
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_service_account" "cloud_run" {
+  account_id   = "${local.prefix}-run-sa"
+  display_name = "Cloud Run service account"
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_project_iam_member" "cloudsql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
+resource "google_project_iam_member" "secret_accessor" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
+resource "random_password" "db_user_password" {
+  length           = var.db_password_length
+  special          = true
+  override_special = "_%@"
+}
+
+resource "random_password" "jwt_secret_key" {
+  length  = var.secret_key_length
+  special = false
+}
+
+resource "google_secret_manager_secret" "db_password" {
+  secret_id = "${local.prefix}-db-password"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_secret_manager_secret_version" "db_password_version" {
+  secret      = google_secret_manager_secret.db_password.id
+  secret_data = random_password.db_user_password.result
+}
+
+resource "google_secret_manager_secret" "jwt_secret_key" {
+  secret_id = "${local.prefix}-jwt-secret-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_secret_manager_secret_version" "jwt_secret_key_version" {
+  secret      = google_secret_manager_secret.jwt_secret_key.id
+  secret_data = random_password.jwt_secret_key.result
+}
+
+resource "google_sql_database_instance" "db" {
+  name             = "${local.prefix}-db"
+  project          = var.project_id
+  region           = var.region
+  database_version = "POSTGRES_15"
+
+  settings {
+    tier              = var.sql_tier
+    disk_size         = var.sql_disk_size
+    disk_type         = var.sql_disk_type
+    edition           = "ENTERPRISE"
+    activation_policy = "ALWAYS"
+    availability_type = "ZONAL"
+
+    ip_configuration {
+      ipv4_enabled = true
+      require_ssl  = false
+    }
+
+    backup_configuration {
+      enabled = false
+    }
+  }
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_sql_database" "app_db" {
+  name     = var.db_name
+  project  = var.project_id
+  instance = google_sql_database_instance.db.name
+}
+
+resource "google_sql_user" "app_user" {
+  name     = var.db_user
+  project  = var.project_id
+  instance = google_sql_database_instance.db.name
+  password = random_password.db_user_password.result
+}
+
+resource "google_cloud_run_service" "backend" {
+  name     = "${local.prefix}-backend"
+  location = var.region
+
+  metadata {
+    annotations = {
+      "run.googleapis.com/ingress"              = "internal-and-cloud-load-balancing"
+      "run.googleapis.com/invoker-iam-disabled" = "true"
+    }
+  }
+
+  template {
+    metadata {
+      annotations = {
+        "autoscaling.knative.dev/maxScale" = tostring(var.cloud_run_max_instances)
+        "run.googleapis.com/cloudsql-instances" = google_sql_database_instance.db.connection_name
+      }
+    }
+
+    spec {
+      service_account_name = google_service_account.cloud_run.email
+      container_concurrency  = 80
+      timeout_seconds       = 60
+
+      containers {
+        image = local.computed_backend
+
+        env {
+          name  = "DB_NAME"
+          value = var.db_name
+        }
+        env {
+          name  = "DB_USER"
+          value = var.db_user
+        }
+        env {
+          name  = "DB_HOST"
+          value = "/cloudsql/${google_sql_database_instance.db.connection_name}"
+        }
+        env {
+          name  = "CORS_ORIGINS"
+          value = var.cors_origins
+        }
+        env {
+          name  = "ACCESS_TOKEN_EXPIRE_MINUTES"
+          value = tostring(var.access_token_expire_minutes)
+        }
+        env {
+          name  = "SESSION_TIMEOUT_MINUTES"
+          value = tostring(var.session_timeout_minutes)
+        }
+        env {
+          name = "DB_PASSWORD"
+          value_from {
+            secret_key_ref {
+              name = google_secret_manager_secret.db_password.secret_id
+              key  = "latest"
+            }
+          }
+        }
+        env {
+          name = "SECRET_KEY"
+          value_from {
+            secret_key_ref {
+              name = google_secret_manager_secret.jwt_secret_key.secret_id
+              key  = "latest"
+            }
+          }
+        }
+
+        ports {
+          container_port = 8000
+        }
+
+        resources {
+          limits = {
+            cpu    = var.cloud_run_cpu
+            memory = var.cloud_run_memory
+          }
+        }
+      }
+    }
+  }
+
+  traffic {
+    latest_revision = true
+    percent         = 100
+  }
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_cloud_run_service" "frontend" {
+  name     = "${local.prefix}-frontend"
+  location = var.region
+
+  metadata {
+    annotations = {
+      "run.googleapis.com/ingress"              = "internal-and-cloud-load-balancing"
+      "run.googleapis.com/invoker-iam-disabled" = "true"
+    }
+  }
+
+  template {
+    metadata {
+      annotations = {
+        "autoscaling.knative.dev/maxScale" = tostring(var.cloud_run_max_instances)
+      }
+    }
+
+    spec {
+      service_account_name = google_service_account.cloud_run.email
+      container_concurrency  = 80
+      timeout_seconds       = 60
+
+      containers {
+        image = local.computed_frontend
+
+        env {
+          name  = "BACKEND_URL"
+          value = "http://${google_compute_global_address.lb.address}"
+        }
+
+        ports {
+          container_port = 80
+        }
+
+        resources {
+          limits = {
+            cpu    = var.cloud_run_cpu
+            memory = var.cloud_run_memory
+          }
+        }
+      }
+    }
+  }
+
+  traffic {
+    latest_revision = true
+    percent         = 100
+  }
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_compute_global_address" "lb" {
+  name = "${local.prefix}-lb-ip"
+
+  depends_on = [google_project_service.enabled_apis]
+}
+
+resource "google_compute_region_network_endpoint_group" "frontend" {
+  name                  = "${local.prefix}-frontend-neg"
+  network_endpoint_type = "SERVERLESS"
+  region                = var.region
+
+  cloud_run {
+    service = google_cloud_run_service.frontend.name
+  }
+}
+
+resource "google_compute_region_network_endpoint_group" "backend" {
+  name                  = "${local.prefix}-backend-neg"
+  network_endpoint_type = "SERVERLESS"
+  region                = var.region
+
+  cloud_run {
+    service = google_cloud_run_service.backend.name
+  }
+}
+
+resource "google_compute_backend_service" "frontend" {
+  name                  = "${local.prefix}-frontend-backend"
+  protocol              = "HTTP"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+
+  backend {
+    group = google_compute_region_network_endpoint_group.frontend.id
+  }
+}
+
+resource "google_compute_backend_service" "backend" {
+  name                  = "${local.prefix}-backend-backend"
+  protocol              = "HTTP"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+
+  backend {
+    group = google_compute_region_network_endpoint_group.backend.id
+  }
+}
+
+resource "google_compute_url_map" "app" {
+  name            = "${local.prefix}-url-map"
+  default_service = google_compute_backend_service.frontend.id
+
+  host_rule {
+    hosts        = ["*"]
+    path_matcher = "app"
+  }
+
+  path_matcher {
+    name            = "app"
+    default_service = google_compute_backend_service.frontend.id
+
+    path_rule {
+      paths = [
+        "/auth",
+        "/auth/*",
+        "/me",
+        "/users",
+        "/transactions",
+        "/dashboard",
+        "/audit",
+        "/ws",
+        "/ws/*",
+      ]
+      service = google_compute_backend_service.backend.id
+    }
+  }
+}
+
+resource "google_compute_target_http_proxy" "app" {
+  name    = "${local.prefix}-http-proxy"
+  url_map = google_compute_url_map.app.id
+}
+
+resource "google_compute_global_forwarding_rule" "http" {
+  name                  = "${local.prefix}-http-forwarding-rule"
+  ip_address            = google_compute_global_address.lb.address
+  port_range            = "80"
+  target                = google_compute_target_http_proxy.app.id
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
