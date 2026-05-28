@@ -1,4 +1,4 @@
-import os, uuid, bcrypt
+import os, uuid, bcrypt, secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -11,6 +11,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "demo-secret-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
 SESSION_TIMEOUT_MINUTES = int(os.getenv("SESSION_TIMEOUT_MINUTES", "30"))
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "15"))
 security = HTTPBearer()
 
 def client_ip(request: Request) -> str:
@@ -65,3 +66,6 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
 
 def new_session_id() -> str:
     return str(uuid.uuid4())
+
+def new_reset_token() -> str:
+    return secrets.token_urlsafe(32)
