@@ -11,7 +11,7 @@ class User(Base):
     username = Column(String(80), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     avatar_color = Column(String(20), default="#2563eb")
-    balance = Column(Numeric(14, 2), nullable=False, default=100000)
+    balance = Column(Numeric(14, 2), nullable=False, default=150000)
     is_online = Column(Boolean, nullable=False, default=False)
     active_session_id = Column(String(120), nullable=True)
     session_started_at = Column(DateTime, nullable=True)

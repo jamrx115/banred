@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(80) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     avatar_color VARCHAR(20) DEFAULT '#2563eb',
-    balance NUMERIC(14,2) NOT NULL DEFAULT 100000,
+    balance NUMERIC(14,2) NOT NULL DEFAULT 150000,
     is_online BOOLEAN NOT NULL DEFAULT FALSE,
     active_session_id VARCHAR(120),
     session_started_at TIMESTAMP,

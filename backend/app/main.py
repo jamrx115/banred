@@ -38,7 +38,7 @@ async def register(payload: RegisterRequest, request: Request, db: Session = Dep
         raise HTTPException(status_code=409, detail="El correo o usuario ya existe")
     colors = ["#2563eb", "#16a34a", "#9333ea", "#ea580c", "#0891b2", "#be123c"]
     session_id = new_session_id()
-    user = User(first_name=payload.first_name.strip(), last_name=payload.last_name.strip(), email=email, username=username, password_hash=hash_password(payload.password), avatar_color=colors[abs(hash(username)) % len(colors)], balance=Decimal("100000"), is_online=True, active_session_id=session_id, session_started_at=datetime.utcnow(), last_seen_at=datetime.utcnow())
+    user = User(first_name=payload.first_name.strip(), last_name=payload.last_name.strip(), email=email, username=username, password_hash=hash_password(payload.password), avatar_color=colors[abs(hash(username)) % len(colors)], balance=Decimal("150000"), is_online=True, active_session_id=session_id, session_started_at=datetime.utcnow(), last_seen_at=datetime.utcnow())
     db.add(user); db.flush()
     audit(db, user.id, "REGISTER", "Usuario registrado e inicio de sesión automático", client_ip(request))
     db.commit(); db.refresh(user)
