@@ -55,6 +55,7 @@ steps:
           --region "${_REGION}" \
           --platform managed \
           --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/backend:$BUILD_ID" \
+          --port 8000 \
           --service-account "$$RUN_SA" \
           --set-cloudsql-instances "$$CONNECTION_NAME" \
           --update-env-vars "DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_HOST=/cloudsql/$$CONNECTION_NAME,CORS_ORIGINS=${_CORS_ORIGINS},ACCESS_TOKEN_EXPIRE_MINUTES=${_ACCESS_TOKEN_EXPIRE_MINUTES},SESSION_TIMEOUT_MINUTES=${_SESSION_TIMEOUT_MINUTES}" \
@@ -81,6 +82,7 @@ steps:
           --region "${_REGION}" \
           --platform managed \
           --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/frontend:$BUILD_ID" \
+          --port 80 \
           --service-account "$$RUN_SA" \
           --update-env-vars "BACKEND_URL=https://${_DOMAIN_NAME}" \
           --ingress internal-and-cloud-load-balancing \
