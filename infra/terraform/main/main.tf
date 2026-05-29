@@ -24,8 +24,6 @@ provider "random" {}
 locals {
   prefix                     = lower(replace(var.name_prefix, "/[^a-z0-9-]/", "-"))
   artifact_repo              = "${var.region}-docker.pkg.dev/${var.project_id}/${local.prefix}-repo"
-  computed_backend           = var.backend_image != "" ? var.backend_image : "${local.artifact_repo}/backend:latest"
-  computed_frontend          = var.frontend_image != "" ? var.frontend_image : "${local.artifact_repo}/frontend:latest"
   public_origin              = var.domain_name != "" ? "https://${var.domain_name}" : "http://${google_compute_global_address.lb.address}"
   cloudflare_ip_range_chunks = chunklist(var.cloudflare_ip_ranges, 10)
 }
@@ -157,151 +155,6 @@ resource "google_sql_user" "app_user" {
   password = random_password.db_user_password.result
 }
 
-resource "google_cloud_run_service" "backend" {
-  name     = "${local.prefix}-backend"
-  location = var.region
-
-  metadata {
-    annotations = {
-      "run.googleapis.com/ingress"              = "internal-and-cloud-load-balancing"
-      "run.googleapis.com/invoker-iam-disabled" = "true"
-    }
-  }
-
-  template {
-    metadata {
-      annotations = {
-        "autoscaling.knative.dev/maxScale"      = tostring(var.cloud_run_max_instances)
-        "run.googleapis.com/cloudsql-instances" = google_sql_database_instance.db.connection_name
-      }
-    }
-
-    spec {
-      service_account_name  = google_service_account.cloud_run.email
-      container_concurrency = 80
-      timeout_seconds       = 60
-
-      containers {
-        image = local.computed_backend
-
-        env {
-          name  = "DB_NAME"
-          value = var.db_name
-        }
-        env {
-          name  = "DB_USER"
-          value = var.db_user
-        }
-        env {
-          name  = "DB_HOST"
-          value = "/cloudsql/${google_sql_database_instance.db.connection_name}"
-        }
-        env {
-          name  = "CORS_ORIGINS"
-          value = var.cors_origins
-        }
-        env {
-          name  = "ACCESS_TOKEN_EXPIRE_MINUTES"
-          value = tostring(var.access_token_expire_minutes)
-        }
-        env {
-          name  = "SESSION_TIMEOUT_MINUTES"
-          value = tostring(var.session_timeout_minutes)
-        }
-        env {
-          name = "DB_PASSWORD"
-          value_from {
-            secret_key_ref {
-              name = google_secret_manager_secret.db_password.secret_id
-              key  = "latest"
-            }
-          }
-        }
-        env {
-          name = "SECRET_KEY"
-          value_from {
-            secret_key_ref {
-              name = google_secret_manager_secret.jwt_secret_key.secret_id
-              key  = "latest"
-            }
-          }
-        }
-
-        ports {
-          container_port = 8000
-        }
-
-        resources {
-          limits = {
-            cpu    = var.cloud_run_cpu
-            memory = var.cloud_run_memory
-          }
-        }
-      }
-    }
-  }
-
-  traffic {
-    latest_revision = true
-    percent         = 100
-  }
-
-  depends_on = [google_project_service.enabled_apis]
-}
-
-resource "google_cloud_run_service" "frontend" {
-  name     = "${local.prefix}-frontend"
-  location = var.region
-
-  metadata {
-    annotations = {
-      "run.googleapis.com/ingress"              = "internal-and-cloud-load-balancing"
-      "run.googleapis.com/invoker-iam-disabled" = "true"
-    }
-  }
-
-  template {
-    metadata {
-      annotations = {
-        "autoscaling.knative.dev/maxScale" = tostring(var.cloud_run_max_instances)
-      }
-    }
-
-    spec {
-      service_account_name  = google_service_account.cloud_run.email
-      container_concurrency = 80
-      timeout_seconds       = 60
-
-      containers {
-        image = local.computed_frontend
-
-        env {
-          name  = "BACKEND_URL"
-          value = local.public_origin
-        }
-
-        ports {
-          container_port = 80
-        }
-
-        resources {
-          limits = {
-            cpu    = var.cloud_run_cpu
-            memory = var.cloud_run_memory
-          }
-        }
-      }
-    }
-  }
-
-  traffic {
-    latest_revision = true
-    percent         = 100
-  }
-
-  depends_on = [google_project_service.enabled_apis]
-}
-
 resource "google_compute_global_address" "lb" {
   name = "${local.prefix}-lb-ip"
 
@@ -314,7 +167,7 @@ resource "google_compute_region_network_endpoint_group" "frontend" {
   region                = var.region
 
   cloud_run {
-    service = google_cloud_run_service.frontend.name
+    service = "${local.prefix}-frontend"
   }
 }
 
@@ -324,7 +177,7 @@ resource "google_compute_region_network_endpoint_group" "backend" {
   region                = var.region
 
   cloud_run {
-    service = google_cloud_run_service.backend.name
+    service = "${local.prefix}-backend"
   }
 }
 

@@ -1,6 +1,6 @@
 output "frontend_url" {
-  description = "URL publica del servicio frontend en Cloud Run"
-  value       = google_cloud_run_service.frontend.status[0].url
+  description = "Nombre del servicio frontend gestionado por Cloud Build"
+  value       = "${var.name_prefix}-frontend"
 }
 
 output "load_balancer_url" {
@@ -19,8 +19,8 @@ output "load_balancer_https_enabled" {
 }
 
 output "backend_url" {
-  description = "URL publica del servicio backend en Cloud Run"
-  value       = google_cloud_run_service.backend.status[0].url
+  description = "Nombre del servicio backend gestionado por Cloud Build"
+  value       = "${var.name_prefix}-backend"
 }
 
 output "sql_instance_connection_name" {
