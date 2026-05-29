@@ -217,7 +217,7 @@ function Auth({ onLogin }) {
   const authText = isForgot ? 'Escribe tu usuario o correo para generar un codigo temporal.' : isReset ? 'Usa el codigo de recuperacion y define una nueva clave.' : isRegister ? 'Completa los datos para empezar con saldo demo.' : 'Ingresa con tu usuario para continuar.';
 
   return (
-    <main className="auth-page" style={{ backgroundColor: '#000' }}>
+    <main className="auth-page">
       <section className="auth-shell">
         <div className="welcome-panel">
           <span className="eyebrow">Banred demo</span>
