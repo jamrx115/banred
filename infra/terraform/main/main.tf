@@ -400,6 +400,7 @@ resource "google_compute_url_map" "app" {
       paths = [
         "/auth",
         "/auth/*",
+        "/health",
         "/me",
         "/users",
         "/transactions",
