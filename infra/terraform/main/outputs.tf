@@ -4,13 +4,18 @@ output "frontend_url" {
 }
 
 output "load_balancer_url" {
-  description = "URL publica HTTP del Load Balancer"
-  value       = "http://${google_compute_global_address.lb.address}"
+  description = "URL publica del Load Balancer"
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${google_compute_global_address.lb.address}"
 }
 
 output "load_balancer_ip" {
   description = "IP publica global del Load Balancer"
   value       = google_compute_global_address.lb.address
+}
+
+output "load_balancer_https_enabled" {
+  description = "Indica si el Load Balancer tiene HTTPS configurado"
+  value       = var.enable_https
 }
 
 output "backend_url" {

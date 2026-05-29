@@ -1,0 +1,2 @@
+bucket = "banred-terraform-state"
+prefix = "main"

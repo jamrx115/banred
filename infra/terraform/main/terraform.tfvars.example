@@ -1,0 +1,21 @@
+project_id  = "your-gcp-project-id"
+region      = "us-central1"
+zone        = "us-central1-a"
+name_prefix = "banred-main"
+
+# Opcional: si ya tiene imagenes cargadas en Artifact Registry, puede definirlas aqui.
+frontend_image = ""
+backend_image  = ""
+
+db_name = "banred"
+db_user = "banred_user"
+
+domain_name = "banred.htqasas.com"
+
+# Para Cloudflare Full (strict):
+# 1. Genere un Origin Certificate en Cloudflare.
+# 2. Guarde el certificado y la llave fuera del repo o en una ruta ignorada.
+# 3. Copie este archivo a terraform.tfvars y active estos valores.
+enable_https                       = true
+cloudflare_origin_certificate_path = "../../../secrets/cloudflare-origin.pem"
+cloudflare_origin_private_key_path = "../../../secrets/cloudflare-origin-key.pem"

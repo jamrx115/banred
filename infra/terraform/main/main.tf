@@ -1,6 +1,8 @@
 terraform {
   required_version = ">= 1.3.0"
 
+  backend "gcs" {}
+
   required_providers {
     google = {
       source  = "hashicorp/google"
@@ -22,10 +24,12 @@ provider "google" {
 provider "random" {}
 
 locals {
-  prefix           = lower(replace(var.name_prefix, "/[^a-z0-9-]/", "-"))
-  artifact_repo    = "${var.region}-docker.pkg.dev/${var.project_id}/${local.prefix}-repo"
-  computed_backend = var.backend_image != "" ? var.backend_image : "${local.artifact_repo}/backend:latest"
-  computed_frontend = var.frontend_image != "" ? var.frontend_image : "${local.artifact_repo}/frontend:latest"
+  prefix                     = lower(replace(var.name_prefix, "/[^a-z0-9-]/", "-"))
+  artifact_repo              = "${var.region}-docker.pkg.dev/${var.project_id}/${local.prefix}-repo"
+  computed_backend           = var.backend_image != "" ? var.backend_image : "${local.artifact_repo}/backend:latest"
+  computed_frontend          = var.frontend_image != "" ? var.frontend_image : "${local.artifact_repo}/frontend:latest"
+  public_origin              = var.domain_name != "" ? "https://${var.domain_name}" : "http://${google_compute_global_address.lb.address}"
+  cloudflare_ip_range_chunks = chunklist(var.cloudflare_ip_ranges, 10)
 }
 
 resource "google_project_service" "enabled_apis" {
@@ -50,7 +54,7 @@ resource "google_artifact_registry_repository" "images" {
   location      = var.region
   repository_id = "${local.prefix}-repo"
   format        = "DOCKER"
-  description   = "Repositorio de contenedores para QA"
+  description   = "Repositorio de contenedores para main"
 
   depends_on = [google_project_service.enabled_apis]
 }
@@ -169,14 +173,14 @@ resource "google_cloud_run_service" "backend" {
   template {
     metadata {
       annotations = {
-        "autoscaling.knative.dev/maxScale" = tostring(var.cloud_run_max_instances)
+        "autoscaling.knative.dev/maxScale"      = tostring(var.cloud_run_max_instances)
         "run.googleapis.com/cloudsql-instances" = google_sql_database_instance.db.connection_name
       }
     }
 
     spec {
-      service_account_name = google_service_account.cloud_run.email
-      container_concurrency  = 80
+      service_account_name  = google_service_account.cloud_run.email
+      container_concurrency = 80
       timeout_seconds       = 60
 
       containers {
@@ -266,8 +270,8 @@ resource "google_cloud_run_service" "frontend" {
     }
 
     spec {
-      service_account_name = google_service_account.cloud_run.email
-      container_concurrency  = 80
+      service_account_name  = google_service_account.cloud_run.email
+      container_concurrency = 80
       timeout_seconds       = 60
 
       containers {
@@ -275,7 +279,7 @@ resource "google_cloud_run_service" "frontend" {
 
         env {
           name  = "BACKEND_URL"
-          value = "http://${google_compute_global_address.lb.address}"
+          value = local.public_origin
         }
 
         ports {
@@ -330,6 +334,7 @@ resource "google_compute_backend_service" "frontend" {
   name                  = "${local.prefix}-frontend-backend"
   protocol              = "HTTP"
   load_balancing_scheme = "EXTERNAL_MANAGED"
+  security_policy       = google_compute_security_policy.cloudflare_only.id
 
   backend {
     group = google_compute_region_network_endpoint_group.frontend.id
@@ -340,9 +345,43 @@ resource "google_compute_backend_service" "backend" {
   name                  = "${local.prefix}-backend-backend"
   protocol              = "HTTP"
   load_balancing_scheme = "EXTERNAL_MANAGED"
+  security_policy       = google_compute_security_policy.cloudflare_only.id
 
   backend {
     group = google_compute_region_network_endpoint_group.backend.id
+  }
+}
+
+resource "google_compute_security_policy" "cloudflare_only" {
+  name        = "${local.prefix}-cloudflare-only"
+  description = "Permite acceso al Load Balancer solo desde Cloudflare"
+
+  dynamic "rule" {
+    for_each = local.cloudflare_ip_range_chunks
+
+    content {
+      action   = "allow"
+      priority = 1000 + rule.key
+
+      match {
+        versioned_expr = "SRC_IPS_V1"
+        config {
+          src_ip_ranges = rule.value
+        }
+      }
+    }
+  }
+
+  rule {
+    action   = "deny(403)"
+    priority = 2147483647
+
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
+    }
   }
 }
 
@@ -378,7 +417,7 @@ resource "google_compute_url_map" "app" {
 
 resource "google_compute_target_http_proxy" "app" {
   name    = "${local.prefix}-http-proxy"
-  url_map = google_compute_url_map.app.id
+  url_map = var.enable_https ? google_compute_url_map.https_redirect[0].id : google_compute_url_map.app.id
 }
 
 resource "google_compute_global_forwarding_rule" "http" {
@@ -387,5 +426,43 @@ resource "google_compute_global_forwarding_rule" "http" {
   port_range            = "80"
   target                = google_compute_target_http_proxy.app.id
   load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+resource "google_compute_ssl_certificate" "cloudflare_origin" {
+  count       = var.enable_https ? 1 : 0
+  name_prefix = "${local.prefix}-cf-origin-"
+  certificate = file(var.cloudflare_origin_certificate_path)
+  private_key = file(var.cloudflare_origin_private_key_path)
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "google_compute_target_https_proxy" "app" {
+  count            = var.enable_https ? 1 : 0
+  name             = "${local.prefix}-https-proxy"
+  url_map          = google_compute_url_map.app.id
+  ssl_certificates = [google_compute_ssl_certificate.cloudflare_origin[0].id]
+}
+
+resource "google_compute_global_forwarding_rule" "https" {
+  count                 = var.enable_https ? 1 : 0
+  name                  = "${local.prefix}-https-forwarding-rule"
+  ip_address            = google_compute_global_address.lb.address
+  port_range            = "443"
+  target                = google_compute_target_https_proxy.app[0].id
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+resource "google_compute_url_map" "https_redirect" {
+  count = var.enable_https ? 1 : 0
+  name  = "${local.prefix}-https-redirect"
+
+  default_url_redirect {
+    https_redirect         = true
+    redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+    strip_query            = false
+  }
 }
 

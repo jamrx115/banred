@@ -34,6 +34,8 @@ pnpm-debug.log*
 *-service-account*.json
 *service-account*.json
 *.credentials.json
+secrets/
+*.crt
 
 # Terraform local state and generated files
 **/.terraform/
@@ -51,6 +53,8 @@ terraform.rc
 .terraformrc
 schema.json
 terraform.tfvars
+backend*.hcl
+!backend*.hcl.example
 *.auto.tfvars
 *.auto.tfvars.json
 

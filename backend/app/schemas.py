@@ -17,6 +17,18 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+class PasswordResetRequest(BaseModel):
+    username_or_email: str = Field(min_length=3, max_length=180)
+
+class PasswordResetResponse(BaseModel):
+    message: str
+    reset_token: str | None = None
+    expires_at: datetime | None = None
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=120)
+    new_password: str = Field(min_length=4, max_length=72)
+
 class UserResponse(BaseModel):
     id: int
     first_name: str
@@ -25,6 +37,16 @@ class UserResponse(BaseModel):
     username: str
     avatar_color: str | None = None
     balance: Decimal
+    is_online: bool
+    last_seen_at: datetime | None = None
+
+class PublicUserResponse(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+    username: str
+    avatar_color: str | None = None
     is_online: bool
     last_seen_at: datetime | None = None
 
@@ -49,7 +71,6 @@ class DashboardResponse(BaseModel):
     sent_total: Decimal
     received_total: Decimal
     transaction_count: int
-    top_users: list[UserResponse]
     chart: list[dict]
 
 class AuditResponse(BaseModel):

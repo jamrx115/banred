@@ -1,0 +1,97 @@
+substitutions:
+  _REGION: us-central1
+  _NAME_PREFIX: banred-main
+  _DOMAIN_NAME: banred.htqasas.com
+  _DB_NAME: banred
+  _DB_USER: banred_user
+  _CORS_ORIGINS: "*"
+  _ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+  _SESSION_TIMEOUT_MINUTES: "30"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitutionOption: ALLOW_LOOSE
+
+steps:
+  - id: build-backend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/backend:$BUILD_ID
+      - backend
+
+  - id: build-frontend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/frontend:$BUILD_ID
+      - frontend
+
+  - id: push-backend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/backend:$BUILD_ID
+
+  - id: push-frontend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/frontend:$BUILD_ID
+
+  - id: deploy-backend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        CONNECTION_NAME="$PROJECT_ID:${_REGION}:${_NAME_PREFIX}-db"
+        RUN_SA="${_NAME_PREFIX}-run-sa@$PROJECT_ID.iam.gserviceaccount.com"
+
+        gcloud run deploy "${_NAME_PREFIX}-backend" \
+          --project "$PROJECT_ID" \
+          --region "${_REGION}" \
+          --platform managed \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/backend:$BUILD_ID" \
+          --service-account "$RUN_SA" \
+          --set-cloudsql-instances "$CONNECTION_NAME" \
+          --update-env-vars "DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_HOST=/cloudsql/$CONNECTION_NAME,CORS_ORIGINS=${_CORS_ORIGINS},ACCESS_TOKEN_EXPIRE_MINUTES=${_ACCESS_TOKEN_EXPIRE_MINUTES},SESSION_TIMEOUT_MINUTES=${_SESSION_TIMEOUT_MINUTES}" \
+          --update-secrets "DB_PASSWORD=${_NAME_PREFIX}-db-password:latest,SECRET_KEY=${_NAME_PREFIX}-jwt-secret-key:latest" \
+          --ingress internal-and-cloud-load-balancing \
+          --quiet
+
+        gcloud run services update "${_NAME_PREFIX}-backend" \
+          --project "$PROJECT_ID" \
+          --region "${_REGION}" \
+          --update-annotations run.googleapis.com/invoker-iam-disabled=true \
+          --quiet
+
+  - id: deploy-frontend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        RUN_SA="${_NAME_PREFIX}-run-sa@$PROJECT_ID.iam.gserviceaccount.com"
+
+        gcloud run deploy "${_NAME_PREFIX}-frontend" \
+          --project "$PROJECT_ID" \
+          --region "${_REGION}" \
+          --platform managed \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/frontend:$BUILD_ID" \
+          --service-account "$RUN_SA" \
+          --update-env-vars "BACKEND_URL=https://${_DOMAIN_NAME}" \
+          --ingress internal-and-cloud-load-balancing \
+          --quiet
+
+        gcloud run services update "${_NAME_PREFIX}-frontend" \
+          --project "$PROJECT_ID" \
+          --region "${_REGION}" \
+          --update-annotations run.googleapis.com/invoker-iam-disabled=true \
+          --quiet
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/backend:$BUILD_ID
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/frontend:$BUILD_ID
