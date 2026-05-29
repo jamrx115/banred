@@ -221,7 +221,7 @@ function Auth({ onLogin }) {
       <section className="auth-shell">
         <div className="welcome-panel">
           <span className="eyebrow">Banred demo</span>
-          <h1>Aplicacion de manejo de trasnsacciones</h1>
+          <h1>integracion y despliegue continuo</h1>
           <p>
             Gestiona usuarios, saldos y transferencias con una experiencia sencilla para probar el flujo completo.
           </p>
