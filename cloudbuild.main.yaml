@@ -55,9 +55,9 @@ steps:
           --region "${_REGION}" \
           --platform managed \
           --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/backend:$BUILD_ID" \
-          --service-account "$RUN_SA" \
-          --set-cloudsql-instances "$CONNECTION_NAME" \
-          --update-env-vars "DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_HOST=/cloudsql/$CONNECTION_NAME,CORS_ORIGINS=${_CORS_ORIGINS},ACCESS_TOKEN_EXPIRE_MINUTES=${_ACCESS_TOKEN_EXPIRE_MINUTES},SESSION_TIMEOUT_MINUTES=${_SESSION_TIMEOUT_MINUTES}" \
+          --service-account "$$RUN_SA" \
+          --set-cloudsql-instances "$$CONNECTION_NAME" \
+          --update-env-vars "DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_HOST=/cloudsql/$$CONNECTION_NAME,CORS_ORIGINS=${_CORS_ORIGINS},ACCESS_TOKEN_EXPIRE_MINUTES=${_ACCESS_TOKEN_EXPIRE_MINUTES},SESSION_TIMEOUT_MINUTES=${_SESSION_TIMEOUT_MINUTES}" \
           --update-secrets "DB_PASSWORD=${_NAME_PREFIX}-db-password:latest,SECRET_KEY=${_NAME_PREFIX}-jwt-secret-key:latest" \
           --ingress internal-and-cloud-load-balancing \
           --quiet
@@ -81,7 +81,7 @@ steps:
           --region "${_REGION}" \
           --platform managed \
           --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_NAME_PREFIX}-repo/frontend:$BUILD_ID" \
-          --service-account "$RUN_SA" \
+          --service-account "$$RUN_SA" \
           --update-env-vars "BACKEND_URL=https://${_DOMAIN_NAME}" \
           --ingress internal-and-cloud-load-balancing \
           --quiet
