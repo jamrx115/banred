@@ -62,7 +62,7 @@ function Avatar({ user, size = 42 }) {
   return (
     <div
       className="avatar"
-      style={{ width: size, height: size, background: user?.avatar_color || '#2563eb' }}
+      style={{ width: size, height: size, background: user?.avatar_color || '#53eb25' }}
       aria-hidden="true"
     >
       {initials(user)}
