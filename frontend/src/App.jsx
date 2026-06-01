@@ -221,10 +221,7 @@ function Auth({ onLogin }) {
       <section className="auth-shell">
         <div className="welcome-panel">
           <span className="eyebrow">Banred demo</span>
-          <h1>solucion de transacciones bancarias</h1>
-          <p>
-            Gestiona usuarios, saldos y transferencias con una experiencia sencilla para probar el flujo completo.
-          </p>
+          <h1>pruebas de Jeann y Nicolas</h1>
           <div className="welcome-list">
             <span><ShieldCheck size={18} /> Sesión única por usuario</span>
             <span><Wifi size={18} /> Actualización en tiempo real</span>
